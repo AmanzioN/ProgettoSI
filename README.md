@@ -1,5 +1,7 @@
 Progetto per corso sistemi intelligenti.
+
 prof. - Scala
+
 Studenti - Bondioli Davide, Amanzio Nicola
 
 Questo progetto è un'applicazione che utilizza la libreria OSMnx per analizzare e visualizzare mappe stradali di regioni specifiche,

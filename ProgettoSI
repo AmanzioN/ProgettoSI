@@ -1,0 +1,498 @@
+import osmnx as ox
+import pygame
+import random   #lasciare per peso strade
+import numpy as np
+import heapq
+
+ox.settings.use_cache = False
+
+#####################################################################################################################################################################################
+
+print("-------------------------------")
+print("Caricamento in corso, attendere")
+print("-------------------------------")
+
+# variabile nome regione
+place_name = 'Valle Aosta, Italy'  # Cambia con l'area di interesse
+
+# varibaili nomi città di partenza e arrivo
+start_city = 'Champoluc'
+end_city = 'Morgex'
+
+#####################################################################################################################################################################################
+
+# definizione dell'euristica 
+def heuristic(graph, current, end_city, edge_lengths, edge_weights):
+    cost_weight=7
+    length_weight=3
+    # Calcola il costo del percorso fino alla città corrente
+    current_length = edge_lengths.get((current, end_city), float('inf'))
+    current_cost = edge_weights.get((current, end_city), float('inf'))
+
+    # Calcola il costo stimato aggiungendo il costo del percorso e la lunghezza pesata
+    estimated_cost = current_cost * cost_weight + current_length * length_weight
+
+    # Aggiungi l'euristica basata sui costi degli archi e i loro pesi
+    if current != end_city and graph[current]:
+        min_edge_cost = min(edge_lengths.get((current, neighbor), float('inf')) * edge_weights.get((current, neighbor), float('inf')) for neighbor in graph[current])
+        estimated_cost += min_edge_cost * cost_weight  # Aggiungi il costo stimato minimo pesato
+    return estimated_cost
+
+# algoritmo di ricerca percorso ottimale
+def astar(graph, start_city, end_city, edge_lengths, edge_weights):
+    max_cost=50
+    # Insieme dei nodi visitati
+    visited = set()
+
+    # Dizionario per tenere traccia dei costi totali stimati per raggiungere ogni nodo
+    total_costs = {city: float('inf') for city in graph}
+    total_costs[start_city] = 0
+
+    # Coda con priorità per scegliere il nodo successivo da esplorare
+    pq = [(0, start_city)]  # (costo totale stimato finora, città)
+
+    # Dizionario per tenere traccia del predecessore di ciascun nodo nel percorso ottimale
+    predecessors = {}
+
+    print("------------------------------------")
+    print("Ricerca percorso ottimale, attendere")
+    print("------------------------------------")
+
+    while pq:
+        current_cost, current_city = heapq.heappop(pq)
+
+        if current_city == end_city:
+            # Arrivati alla destinazione, ricostruisci il percorso ottimale
+            path = [end_city]
+            while end_city != start_city:
+                end_city = predecessors[end_city]
+                path.append(end_city)
+            path.reverse()
+            return path
+
+        visited.add(current_city)
+
+        for neighbor, distance in graph[current_city].items():
+            if neighbor in visited:
+                continue
+
+            # Calcola il costo del percorso fino al vicino attraverso il nodo corrente
+            new_cost = total_costs[current_city] + edge_lengths.get((current_city, neighbor), float('inf')) * edge_weights.get((current_city, neighbor), float('inf'))
+
+            # Applica il filtro sul costo massimo se specificato
+            if max_cost is not None and new_cost > max_cost:
+                continue
+
+            # Se il nuovo costo è minore di quello attualmente stimato, aggiorna i costi e il predecessore
+            if new_cost < total_costs[neighbor]:
+                total_costs[neighbor] = new_cost
+                # Calcola il costo stimato aggiungendo il valore euristico al nuovo costo
+                estimated_cost = new_cost + heuristic(graph, neighbor, end_city, edge_lengths, edge_weights)
+                heapq.heappush(pq, (estimated_cost, neighbor))
+                predecessors[neighbor] = current_city
+
+    print("Percorso ottimale colorato di verde")
+    print("-----------------------------------")
+
+    # Se non è stato possibile trovare un percorso, restituisci None
+    return None
+
+#####################################################################################################################################################################################
+
+#ricerca tramite le coordinate della città selezioanta della mappa di pygame la coordinate associate del nodo più vicino
+def find_nearest_node(city_coordinates, prj_region, start_city, end_city, scale, screen):
+    start_city_found = False
+    end_city_found = False
+    
+    # Verifica se le città sono presenti nelle coordinate
+    for city_name, coords in city_coordinates.items():
+        if city_name == start_city:
+            start_city_found = True
+            #print(f"{city_name} trovata come città di partenza")
+            
+    for city_name, coords in city_coordinates.items():
+        if city_name == end_city:
+            end_city_found = True
+            #print(f"{city_name} trovata come città di arrivo")
+
+    if not start_city_found:
+        print(f"Città di partenza '{start_city}' non trovata nei dati delle città")
+        return None, None
+
+    if not end_city_found:
+        print(f"Città di arrivo '{end_city}' non trovata nei dati delle città")
+        return None, None
+    
+    # Trova le coordinate delle città di partenza e arrivo
+    start_coords = city_coordinates[start_city]
+    end_coords = city_coordinates[end_city]
+
+    # Trova i nodi più vicini
+    start_node = None
+    start_dist = np.inf
+    for u, v, data in prj_region.edges(keys=False, data=True):
+        node_u = prj_region.nodes[u]
+        node_v = prj_region.nodes[v]
+        x1, y1 = lonlat_to_screen(node_u['x'], node_u['y'], scale)
+        x2, y2 = lonlat_to_screen(node_v['x'], node_v['y'], scale)
+        dist_u = np.linalg.norm(np.array(start_coords) - np.array((x1, y1)))
+        dist_v = np.linalg.norm(np.array(start_coords) - np.array((x2, y2)))
+        if dist_u < start_dist:
+            start_node = u
+            start_dist = dist_u
+        if dist_v < start_dist:
+            start_node = v
+            start_dist = dist_v
+
+    end_node = None
+    end_dist = np.inf
+    for u, v, data in prj_region.edges(keys=False, data=True):
+        node_u = prj_region.nodes[u]
+        node_v = prj_region.nodes[v]
+        x1, y1 = lonlat_to_screen(node_u['x'], node_u['y'], scale)
+        x2, y2 = lonlat_to_screen(node_v['x'], node_v['y'], scale)
+        dist_u = np.linalg.norm(np.array(end_coords) - np.array((x1, y1)))
+        dist_v = np.linalg.norm(np.array(end_coords) - np.array((x2, y2)))
+        if dist_u < end_dist:
+            end_node = u
+            end_dist = dist_u
+        if dist_v < end_dist:
+            end_node = v
+            end_dist = dist_v
+
+    #print(f"Nodo di partenza più vicino trovato: {start_node}")
+    #print(f"Nodo di arrivo più vicino trovato: {end_node}")
+
+    return start_node, end_node
+
+#####################################################################################################################################################################################
+
+# disegna dei cerchi gialli sulla mappa di pygame per evidenziare la posizione della città di partenza e di arrivo
+def draw_city_circle(start_node,end_node,screen):
+# Disegna cerchio giallo intorno al nodo di partenza
+    if start_node is not None:
+        node_x, node_y = lonlat_to_screen(prj_region.nodes[start_node]['x'], prj_region.nodes[start_node]['y'], scale)
+        pygame.draw.circle(screen, (255, 255, 0), (int(node_x), int(node_y)), 5)
+        #print(f"Disegno cerchio giallo intorno al nodo di partenza: {start_node} - Coordinate: {node_x}, {node_y}")
+
+    # Disegna cerchio giallo intorno al nodo di arrivo
+    if end_node is not None:
+        node_x, node_y = lonlat_to_screen(prj_region.nodes[end_node]['x'], prj_region.nodes[end_node]['y'], scale)
+        pygame.draw.circle(screen, (255, 255, 0), (int(node_x), int(node_y)), 5)
+        #print(f"Disegno cerchio giallo intorno al nodo di arrivo: {end_node} - Coordinate: {node_x}, {node_y}")
+
+#####################################################################################################################################################################################
+
+# funzione per trovare i nomi delle città presenti nella regione selezionata
+def find_places(place_name):
+    tags = {"place": ["city", "town", "village"]}
+    places = ox.features_from_place(place_name, tags=tags)
+    # Filtra le geometrie (nome città)per mantenere solo quelle con nomi di città validi
+    filtered_places = {}
+    if 'name' in places:  # Verifica se la chiave 'name' è presente
+        filtered_places['name'] = {}
+        for place_id, place_name in places['name'].items():
+            place_name_str = str(place_name)
+            if place_name_str.strip() != 'nan':
+                filtered_places['name'][place_id] = place_name_str
+
+    # Stampa le geometrie (nome città) trovate escludendo quelle con valori 'nan'
+    print("Ecco tutte le città selezionabili nella regione {place_name}:")
+    
+    for place_id, place_name in filtered_places.get('name', {}).items():
+        print(f"- {place_id}: {place_name}")
+    return places
+
+# Trova i nomi delle città presenti nella regione
+city_names = find_places(place_name)
+
+#####################################################################################################################################################################################
+
+#funzione per calcolare le coordinate per mettere i nomi città sul  frame
+def scale_coordinates(city_geometries, window_width, window_height, scale, min_x, min_y, max_x, max_y,scale_regulator_x,scale_regulator_y):
+    # Proietta le geometrie nel sistema di riferimento proiettato
+    city_geometries_projected = city_geometries.to_crs('EPSG:3395')
+    
+    # Trasformiamo i poligoni delle città in punti
+    city_points = city_geometries_projected.copy()
+    city_points['geometry'] = city_geometries_projected.centroid
+    
+    # Calcoliamo le coordinate scalate per i punti delle città
+    scaled_coordinates = {}
+    for index, row in city_points.iterrows():
+        x = (row.geometry.x - min_x -scale_regulator_x) * (window_width / (max_x - min_x)) * scale
+        y = window_height  - ((row.geometry.y - min_y -scale_regulator_y) * (window_height / (max_y - min_y)) * scale)
+        scaled_coordinates[row['name']] = (x, y)
+    
+    return scaled_coordinates
+
+#####################################################################################################################################################################################
+
+#funzione per disegnare i nomi delle città
+def draw_city_names(city_coordinates, screen, scale):
+    font_size = int(10 * scale)
+    font = pygame.font.Font(None, font_size)  # Crea un oggetto Font con la dimensione calcolata
+
+    # Creiamo una lista di superfici di testo per ogni città
+    text_surfaces = []
+    text_rects = []
+    
+    # Iteriamo attraverso le coordinate delle città e disegniamo il nome di ogni città
+    for city, (x, y) in city_coordinates.items():
+        # Assicuriamoci che il nome della città sia una stringa
+        city_str = str(city)
+        
+        # Renderizziamo il testo con il colore verde
+        text_surface = font.render(city_str, True, (0, 0, 0))
+        
+        # Ottieniamo il rettangolo che racchiude il testo e impostiamo le coordinate del centro
+        #scala il testo in base alla scala attuale
+        text_rect = text_surface.get_rect(center=(x , y ))
+        
+        # Aggiungiamo la superficie di testo e il rettangolo alla lista
+        text_surfaces.append(text_surface)
+        text_rects.append(text_rect)
+
+    # Disegniamo tutte le superfici di testo sullo schermo
+    for surface, rect in zip(text_surfaces, text_rects):
+        screen.blit(surface, rect)
+
+    # Aggiorniamo lo schermo di Pygame solo una volta dopo aver disegnato tutti i nomi delle città
+    pygame.display.update()
+
+
+
+#####################################################################################################################################################################################
+
+
+# Impostazioni della finestra di Pygame
+window_width = 800
+window_height = 600
+window_title = "Regione: " + place_name
+background_color = (255, 255, 255)  # Bianco
+primary_color = (255, 0, 0)  # Rosso
+secondary_color = (0, 0, 0)  # Nero
+#city_color = (0, 255, 0)  # Verde
+
+# Scala iniziale
+initial_scale = 1.0
+min_scale = 0.1
+max_scale = 50.0
+zoom_factor = 1.1
+scale = initial_scale
+
+# Ottieni il grafo stradale di una regione con OSMnx
+region = ox.graph_from_place(place_name, network_type="drive")
+
+# Proietta il grafo su una proiezione appropriata
+prj_region = ox.project_graph(region)
+
+#####################################################################################################################################################################################
+
+# Inizializza i dizionari per i pesi delle lunghezze degli archi e i pesi dei costi degli archi
+edge_lengths = {}
+edge_weights = {}
+
+# Assegna i pesi agli archi
+for u, v, data in prj_region.edges(keys=False, data=True):
+    # Assegna il peso della lunghezza
+    edge_lengths[(u, v)] = data['length']
+    
+    # Assegna il peso del costo
+    if 'highway' in data:
+        if data['highway'] == 'motorway' or data['highway'] == 'trunk':
+            edge_weights[(u, v)] = 1                                                            #round(random.uniform(0.5, 2), 2)
+        else:
+            edge_weights[(u, v)] = 0
+    else:
+        edge_weights[(u, v)] = 0
+
+
+#####################################################################################################################################################################################
+
+# Calcola i limiti della mappa per le strade
+nodes_coords = [node['x'] for _, node in prj_region.nodes(data=True)], [node['y'] for _, node in prj_region.nodes(data=True)]
+min_lon, max_lon = min(nodes_coords[0]), max(nodes_coords[0])
+min_lat, max_lat = min(nodes_coords[1]), max(nodes_coords[1])
+
+#####################################################################################################################################################################################
+
+# Funzione per trasformare le coordinate della mappa in coordinate della finestra di Pygame, tenendo conto della scala
+def lonlat_to_screen(lon, lat, scale):
+    x = (lon - min_lon) * (window_width / (max_lon - min_lon)) * scale
+    y = window_height - ((lat - min_lat) * (window_height / (max_lat - min_lat)) * scale)
+    return int(x), int(y)
+
+#serve per calcolare i limiti mappa per città
+city_geometries_projected = city_names.to_crs('EPSG:3395')
+# Calcoliamo i limiti della mappa
+min_x, min_y, max_x, max_y = city_geometries_projected.total_bounds
+
+# Calcola la differenza tra i massimi delle strade e i massimi delle città
+lon_diff = max(max_lon, max_x) - min(max_lon, max_x)
+lat_diff = max(max_lat, max_y) - min(max_lat, max_y)
+
+
+if(lon_diff > 1000000):
+    scale_regulator_x = (8143 * lon_diff) / 1160823.98
+else :
+    scale_regulator_x = -(8143 * lon_diff) / 1160823.98
+    
+if(lat_diff < 500000):
+    scale_regulator_y = (5143 * lat_diff) / 476714.1
+else :
+    scale_regulator_y = -(5143 * lat_diff) / 476714.1
+
+#print(scale_regulator_x, scale_regulator_y)
+
+#print(min_lon, max_lon,min_lat, max_lat)
+#print(min_x, min_y, max_x, max_y)
+#print(lon_diff,lat_diff)
+
+#city = scale_coordinates(city_names, window_width, window_height, scale, min_x, min_y, max_x, max_y)
+#print(city)
+
+#####################################################################################################################################################################################
+
+
+# Inizializza Pygame
+pygame.init()
+screen = pygame.display.set_mode((window_width, window_height))
+pygame.display.set_caption(window_title)
+font = pygame.font.Font(None, 36)  # Imposta il font e la dimensione del testo
+
+# Funzione per gestire lo zoom con la rotella del mouse
+def zoom(scale, direction):
+    if direction == "in":
+        new_scale = scale * zoom_factor
+    elif direction == "out":
+        new_scale = scale / zoom_factor
+    # Limita la scala minima e massima
+    new_scale = max(min_scale, min(max_scale, new_scale))
+    
+    return new_scale
+
+# Variabile per memorizzare la posizione del mouse durante il clic
+clicked_pos = None
+#variabile per vedere se hanno premuto spazio
+clicked_space = False
+
+
+city_coordinates = scale_coordinates(city_names, window_width, window_height, scale, min_x, min_y,  max_x, max_y, scale_regulator_x, scale_regulator_y)
+start_node,end_node  = find_nearest_node(city_coordinates, prj_region, start_city, end_city, scale,screen)
+#print(start_node,end_node)
+
+# Passa il grafo proiettato alla tua funzione di ricerca A*
+path = astar(prj_region, start_node, end_node, edge_lengths, edge_weights)
+
+# stampa a video dei nodi che compongono il percorso ottimale
+#print("Percorso ottimale:", path)
+
+#####################################################################################################################################################################################
+
+#disegna sulla mappa di pygame il percorso ottimale trovato
+def draw_optimal_path(optimal_path, prj_region, scale, screen):
+    # Disegna il percorso ottimale sulla mappa
+    for i in range(len(optimal_path) - 1):
+        start_node = optimal_path[i]
+        end_node = optimal_path[i + 1]
+        
+        if start_node is not None and end_node is not None:
+            start_coords = prj_region.nodes[start_node]['x'], prj_region.nodes[start_node]['y']
+            end_coords = prj_region.nodes[end_node]['x'], prj_region.nodes[end_node]['y']
+            
+            start_x, start_y = lonlat_to_screen(start_coords[0], start_coords[1], scale)
+            end_x, end_y = lonlat_to_screen(end_coords[0], end_coords[1], scale)
+            
+            pygame.draw.line(screen, (0, 255, 0), (int(start_x), int(start_y)), (int(end_x), int(end_y)), 3)
+
+#####################################################################################################################################################################################
+
+# calcola costo e lunghezza percorso trovato
+def calculate_total_cost_and_length(path, edge_lengths, edge_weights):
+    total_cost = 0
+    total_length = 0
+    for i in range(len(path) - 1):
+        total_cost += edge_weights.get((path[i], path[i+1]), 0)
+        total_length += edge_lengths.get((path[i], path[i+1]), 0)
+    return total_cost, total_length
+
+
+total_cost, total_length = calculate_total_cost_and_length(path, edge_lengths, edge_weights)
+total_length1 = round(total_length, 2)
+total_length2 = round(total_length / 1000, 2)  # Converti in km
+
+print("-------------------------------------------------------------")
+print('costo percorso:',total_cost,'lunghezza percorso:',total_length1, 'metri, o ', total_length2, 'km')
+print("-------------------------------------")
+print("Chiudere la finestra per ricominciare")
+
+#####################################################################################################################################################################################
+
+# All'interno del loop principale
+running = True
+
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 4:  # Rotella su (zoom in)
+                scale = zoom(scale, "in")  # Effettua lo zoom
+            elif event.button == 5:  # Rotella giù (zoom out)
+                scale = zoom(scale, "out")  # Effettua lo zoom
+            elif event.button == 1:  # Click sinistro del mouse
+                clicked_pos = pygame.mouse.get_pos()
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1:  # Rilascio del click sinistro del mouse
+                clicked_pos = None
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE:
+                clicked_space = True
+
+    # Se il mouse è stato cliccato e trascinato, aggiorna le coordinate della mappa
+    if clicked_pos:
+        mouse_pos = pygame.mouse.get_pos()
+        dx = mouse_pos[0] - clicked_pos[0]
+        dy = mouse_pos[1] - clicked_pos[1]
+        min_lon -= dx / (window_width * scale) * (max_lon - min_lon)
+        max_lon -= dx / (window_width * scale) * (max_lon - min_lon)
+        min_lat += dy / (window_height * scale) * (max_lat - min_lat)
+        max_lat += dy / (window_height * scale) * (max_lat - min_lat)
+        min_x -= dx / (window_width * scale) * (max_x - min_x)
+        max_x -= dx / (window_width * scale) * (max_x - min_x)
+        min_y += dy / (window_height * scale) * (max_y - min_y)
+        max_y += dy / (window_height * scale) * (max_y - min_y)
+        clicked_pos = mouse_pos
+        
+
+   # Disegna la mappa su Pygame
+    screen.fill(background_color)
+    for u, v, data in prj_region.edges(keys=False, data=True):
+        node_u = prj_region.nodes[u]
+        node_v = prj_region.nodes[v]
+        x1, y1 = lonlat_to_screen(node_u['x'], node_u['y'], scale)
+        x2, y2 = lonlat_to_screen(node_v['x'], node_v['y'], scale)
+        if edge_weights[(u, v)] > 0:  # Controllo del peso del costo
+            pygame.draw.line(screen, (0, 0, 255), (x1, y1), (x2, y2), 3)  # Strade con peso del costo > 0 in blu
+        else:
+            pygame.draw.line(screen, secondary_color, (x1, y1), (x2, y2), 1)  # Strade con peso del costo <= 0 con un altro colore
+            
+    
+    city_coordinates = scale_coordinates(city_names, window_width, window_height, scale, min_x, min_y,  max_x, max_y, scale_regulator_x, scale_regulator_y)
+    draw_city_circle(start_node,end_node, screen)
+    
+    # Disegna i nomi delle città sulla mappa
+    draw_city_names(city_coordinates, screen, scale)
+    
+    # Disegna il percorso ottimale se draw_optimal_path è True
+    if clicked_space:
+        draw_optimal_path(path,prj_region,scale, screen)
+
+    #aggiorna pygame
+    pygame.display.flip()
+
+#####################################################################################################################################################################################
+
+# Termina Pygame
+pygame.quit()

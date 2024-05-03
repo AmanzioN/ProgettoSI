@@ -1,11 +1,11 @@
-Progetto per corso sistemi intelligenti.
+Progetto per corso "Sistemi intelligenti".
 
-prof. - Scala
+Prof. - Scala
 
-Studenti - Bondioli Davide, Amanzio Nicola
+Studenti - Bondioli Davide, Amanzio Nicola.
 
 Questo progetto è un'applicazione che utilizza la libreria OSMnx per analizzare e visualizzare mappe stradali di regioni specifiche,
-con l'obiettivo di trovare un percorso in grado di mediare tra costo e lunghezza del percorso in base a dei parametri
+con l'obiettivo di trovare un percorso in grado di mediare tra costo e lunghezza del percorso in base a dei parametri.
 
 Il codice fornito implementa diverse funzionalità:
 - Caricamento della regione d'interesse e delle città di partenza e arrivo:

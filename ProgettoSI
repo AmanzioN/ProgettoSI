@@ -81,9 +81,8 @@ def astar(graph, start_city, end_city, edge_lengths, edge_weights):
             for i in range(len(path) - 1):
                 # si accede ai dizionari "edge_lengths" e "edge_weights" per ottenere la lunghezza dell'arco tra i nodi consecutivi path[i] e path[i + 1], se non trova restituisce float
                 total_path_cost += edge_lengths.get((path[i], path[i + 1]), float('inf')) * edge_weights.get((path[i], path[i + 1]), float('inf'))
-               
-                # Supponendo un grafo non diretto e archi unici
-                edge_data = region[path[i]][path[i+1]][0]
+                #total_length += edge_lengths.get((path[i], path[i+1]), 0)
+                edge_data = region[path[i]][path[i+1]][0]  # Supponendo un grafo non diretto e archi unici
                 # Ottieni la lunghezza dell'arco dal campo 'length' nei dati dell'arco
                 edge_length = edge_data['length']
                 # Aggiungi la lunghezza dell'arco alla lunghezza totale del percorso

@@ -3,6 +3,8 @@ import pygame
 import random   #lasciare per peso strade
 import numpy as np
 import heapq
+import math 
+from pyproj import Proj, transform
 
 ox.settings.use_cache = False
 
@@ -13,39 +15,26 @@ print("Caricamento in corso, attendere")
 print("-------------------------------")
 
 # variabile nome regione
-place_name = 'Valle Aosta, Italy'  # Cambia con l'area di interesse
+place_name = 'Molise, Italy'  # Cambia con l'area di interesse
 
 # varibaili nomi città di partenza e arrivo
-start_city = 'Champoluc'
-end_city = 'Morgex'
+start_city = 'Pesche'
+end_city = 'Termoli'
+#imposta costo massimo del tragitto
+max_cost = 5
 
 #####################################################################################################################################################################################
 
-# definizione dell'euristica 
-def heuristic(graph, current, end_city, edge_lengths, edge_weights):
-
-    #aumentare il costo vuol dire trovare un percorso più economico
-    #aumentare la lunghezza vuol dire trovare un percorso più lungo
-    cost_weight = 0
-    length_weight = 0
-    
-    # Calcola il costo del percorso fino alla città corrente
-    current_length = edge_lengths.get((current, end_city), float('inf'))
-    current_cost = edge_weights.get((current, end_city), float('inf'))
-
-    # Calcola il costo stimato aggiungendo il costo del percorso e la lunghezza pesata
-    estimated_cost = current_cost * cost_weight + current_length * length_weight
-
-    # Aggiungi l'euristica basata sui costi degli archi e i loro pesi
-    if current != end_city and graph[current]:
-        min_edge_cost = min(edge_lengths.get((current, neighbor), float('inf')) * edge_weights.get((current, neighbor), float('inf')) for neighbor in graph[current])
-        estimated_cost += min_edge_cost * cost_weight  # Aggiungi il costo stimato minimo pesato
-    return estimated_cost
-
+def heuristic(current, end_city, graph):
+    current_coords = graph.nodes[current]
+    end_coords = graph.nodes[end_city]
+    # Calcola la distanza euclidea tra il nodo corrente e la destinazione
+    distance = math.sqrt((current_coords['x'] - end_coords['x'])**2 + (current_coords['y'] - end_coords['y'])**2)
+    #print(distance)
+    return distance
 
 def astar(graph, start_city, end_city, edge_lengths, edge_weights):
-    max_cost = 20000
-    max_length = 130000
+    
     # Insieme dei nodi visitati
     visited = set()
     # Lista per tenere traccia dei nodi visitati nell'ordine in cui vengono visitati
@@ -61,6 +50,9 @@ def astar(graph, start_city, end_city, edge_lengths, edge_weights):
     # Dizionario per tenere traccia del predecessore di ciascun nodo nel percorso ottimale
     predecessors = {}
 
+    print("------------------------------------")
+    print("Ricerca percorso ottimale, attendere")
+    print("------------------------------------")
 
     while pq:
         current_cost, current_city = heapq.heappop(pq)
@@ -75,40 +67,31 @@ def astar(graph, start_city, end_city, edge_lengths, edge_weights):
 
             # Calcola il costo totale del percorso
             total_path_cost = 0
-            total_length = 0 # percorso tot
-            total_length2 = 0 # a pagamento
+            total_length = 0
+            total_length2 = 0
 
             for i in range(len(path) - 1):
-                # si accede ai dizionari "edge_lengths" e "edge_weights" per ottenere la lunghezza dell'arco tra i nodi consecutivi path[i] e path[i + 1], se non trova restituisce float
-                total_path_cost += edge_lengths.get((path[i], path[i + 1]), float('inf')) * edge_weights.get((path[i], path[i + 1]), float('inf'))
-                #total_length += edge_lengths.get((path[i], path[i+1]), 0)
-                edge_data = region[path[i]][path[i+1]][0]  # Supponendo un grafo non diretto e archi unici
-                # Ottieni la lunghezza dell'arco dal campo 'length' nei dati dell'arco
-                edge_length = edge_data['length']
-                # Aggiungi la lunghezza dell'arco alla lunghezza totale del percorso
+                edge_length = edge_lengths.get((path[i], path[i + 1]), float('inf'))
+                edge_cost = edge_weights.get((path[i], path[i + 1]), float('inf'))
+                total_path_cost += edge_length * edge_cost
                 total_length += edge_length
-                
-                if edge_weights.get((path[i], path[i + 1]), float('inf')) > 0:
-                    total_length2 += edge_lengths.get((path[i], path[i+1]), 0)
+
+                if edge_cost > 0:
+                    total_length2 += edge_length
 
             # Se il percorso supera i filtri, continua con il prossimo percorso
-            if total_path_cost > max_cost or total_length > max_length:
+            if total_path_cost > max_cost:
+                print(total_path_cost, max_cost, '-------------------------------------------------')
                 continue
 
-            total_path_cost = round(total_path_cost, 2)
-            total_length = round(total_length /1000, 2)
-            total_length2 = round(total_length2/1000, 2)
-            
             # Stampa il costo e la lunghezza del percorso
-            print("Specifiche percorso trovato:\n\n"
-                  f"Costo percorso: {total_path_cost} Euro di pedaggi\n"
-                  f"Lunghezza percorso a pagamento: {total_length2} Km\n"
-                  f"Lunghezza percorso totale: {total_length} Km\n"
-                  "-----------------------------------------------\n\n"
-                  "   Cliccare sulla finestra di pygame e\n"
-                  "   premere Space per visualizzare il percorso\n\n"
-                  "-----------------------------------------------\n"
-                  "Chiudere la finestra di pygame per terminare")
+            total_path_cost = round(total_path_cost, 2)
+            total_length = round(total_length / 1000, 2)
+            total_length2 = round(total_length2 / 1000, 2)
+
+            print(f"Costo percorso: {total_path_cost}")
+            print(f"Lunghezza percorso: {total_length}")
+            print(f"Lunghezza percorso a pagamento: {total_length2}")
 
             return path, visited_nodes
 
@@ -122,19 +105,22 @@ def astar(graph, start_city, end_city, edge_lengths, edge_weights):
             new_length = total_costs[current_city] + edge_lengths.get((current_city, neighbor), float('inf'))
             new_cost = new_length * edge_weights.get((current_city, neighbor), float('inf'))
 
-            # Se i filtri non permettono l'esplorazione, vai al prossimo nodo
-            if new_cost > max_cost or new_length > max_length:
+            # Se il nuovo costo supera il limite massimo, passa al prossimo nodo
+            if new_cost > max_cost:
                 continue
 
-            # Se il nuovo costo è minore di quello attualmente stimato, aggiorna i costi e il predecessore
-            if new_cost < total_costs[neighbor]:
-                total_costs[neighbor] = new_cost
+            # Se il nuovo percorso è più breve dell'attuale, aggiorna i costi e il predecessore
+            if new_length < total_costs[neighbor]:
+                total_costs[neighbor] = new_length
 
                 # Calcola il costo stimato aggiungendo il valore euristico al nuovo costo
-                estimated_cost = new_cost + heuristic(graph, neighbor, end_city, edge_lengths, edge_weights)
+                estimated_cost = new_length + heuristic(neighbor, end_city, graph)
                 heapq.heappush(pq, (estimated_cost, neighbor))
 
                 predecessors[neighbor] = current_city
+
+    print("Percorso ottimale colorato di verde")
+    print("-----------------------------------")
 
     # Se non è stato possibile trovare un percorso, restituisci None
     return None, visited_nodes

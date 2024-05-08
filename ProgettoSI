@@ -4,7 +4,6 @@ import random   #lasciare per peso strade
 import numpy as np
 import heapq
 import math 
-from pyproj import Proj, transform
 
 ox.settings.use_cache = False
 
